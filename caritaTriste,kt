@@ -1,0 +1,372 @@
+package com.example.userkotlin.ui.gallery
+
+import Library.MemoryData
+import Library.Networks
+import Models.Pojo.User
+import android.app.Activity
+import android.content.ContentValues
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ProgressBar
+import android.widget.TextView
+import androidx.annotation.RequiresApi
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModelProvider
+import com.example.userkotlin.R
+import com.example.userkotlin.ui.slideshow.DatePickerFragment
+import com.example.userkotlin.ui.slideshow.TimePickerFragment
+import com.google.android.material.snackbar.Snackbar
+import com.google.common.reflect.TypeToken
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.gson.Gson
+import kotlinx.android.synthetic.main.fragment_gallery.*
+import kotlinx.android.synthetic.main.fragment_slideshow.*
+import java.lang.reflect.Type
+import java.text.DateFormat
+import java.util.*
+
+class GalleryFragment : Fragment() {
+    //
+    lateinit var montString: String
+    private var _activity: Activity? = null
+    private var typeItem: Type = object : TypeToken<User?>() {}.type
+    private var data: User? = null
+    private var gson = Gson()
+    private var _memoryData: MemoryData? = null
+
+    //EditText's (Datos del docente)
+    lateinit var fechaElavoracion: String
+    lateinit var periodoEscolar: String
+    lateinit var materia: String
+    lateinit var nombreDocente: String
+    lateinit var telefonoDocente: String
+
+    //EditText's (Datos de la empresa/Institución)
+    lateinit var nombreEmpresa: String
+    lateinit var domicilioEmpresa: String
+    lateinit var ciudadEmpresa: String
+    lateinit var telefonoEmpresa: String
+    lateinit var emailEmpresa: String
+
+    //EditText´s (Datos de la visita)
+    lateinit var carrera: String
+    lateinit var areaObservar: String
+    lateinit var objetivoVisita: String
+    lateinit var numeroAlumnos: String
+    lateinit var fechaTentativa: String
+    lateinit var horaTentativa: String
+
+    //variables usuario autenticado
+    var nombreUsuario: String? = null
+    var apellidos: String? = null
+    var emailUsuario: String? = null
+
+    //variables para validacion
+    var booleanDatosDocentes: Boolean? = null
+
+    // ProgressBar
+    private var _progressBarRequestVisit: ProgressBar? = null
+
+    //FireBase
+    private var _db: FirebaseFirestore? = null
+
+
+    private lateinit var galleryViewModel: GalleryViewModel
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+
+        val currentDateTimeString: String = DateFormat.getDateTimeInstance().format(Date())
+
+        galleryViewModel =
+            ViewModelProvider(this).get(GalleryViewModel::class.java)
+        val root = inflater.inflate(R.layout.fragment_gallery, container, false)
+        val textView: TextView = root.findViewById(R.id.current_data)
+        galleryViewModel.text.observe(viewLifecycleOwner, Observer {
+
+            invisibleProgressBar()
+            textView.text = currentDateTimeString
+            textView.isFocusable = false;
+
+            _activity = activity
+            _memoryData = MemoryData.getInstance(_activity!!)
+
+            getUser()
+            nombre_docente.setText(nombreUsuario!! + " " + apellidos!!)
+
+//            Date/Time picker
+            fecha_tentativa.setOnClickListener { showDatePickerDialog() }
+            fecha_tentativa_input.setOnClickListener { showDatePickerDialog() }
+            hora_tentativa.setOnClickListener { showTimePickerDialog() }
+            hora_tentativa_input.setOnClickListener { showTimePickerDialog() }
+
+            button_ok_request.setOnClickListener {
+
+            }
+//            Date/Time picker
+        })
+        return root
+    }
+
+    //funcion para enviar datos a Firebase
+    private fun setToFireBase(empresa: String) {
+        visibleProgressBar()
+        val city = hashMapOf(
+            "name" to empresa,
+        )
+        _db!!.collection("solicitudVisita").document(emailUsuario!!)
+            .set(city)
+            .addOnSuccessListener {
+                Log.d(
+                    ContentValues.TAG,
+                    "DocumentSnapshot successfully written!"
+                )
+            }
+            .addOnFailureListener { e -> Log.w(ContentValues.TAG, "Error writing document", e) }
+    }
+
+    // funciones para fecha, data/time picker
+    private fun showTimePickerDialog() {
+        val timePicker = TimePickerFragment { onTimeSeletion(it) }
+        timePicker.show(parentFragmentManager, "time picker dialog fragment")
+    }
+
+    private fun onTimeSeletion(time: String) {
+        hora_tentativa.setText(time)
+
+    }
+
+    private fun showDatePickerDialog() {
+        val datePicker = DatePickerFragment { day, month, year -> onDateSeletion(day, month, year) }
+        datePicker.show(parentFragmentManager, "date picker dialog fragment")
+    }
+
+    fun onDateSeletion(day: Int, mont: Int, year: Int) {
+
+        when (mont + 1) {
+            1 -> montString = "Enero"
+            2 -> montString = "Febrero"
+            3 -> montString = "Marzo"
+            4 -> montString = "Abril"
+            5 -> montString = "Mayo"
+            6 -> montString = "Junio"
+            7 -> montString = "Julio"
+            8 -> montString = "Agosto"
+            9 -> montString = "Septiembre"
+            10 -> montString = "Octubre"
+            11 -> montString = "Noviembre"
+            12 -> montString = "Diciembre"
+        }
+        fecha_tentativa.setText("$day/$montString/$year")
+    }
+    // funciones para fecha, data/time picker
+
+    //funcion para obtener datos de usuario Autenticado
+    @RequiresApi(Build.VERSION_CODES.M)
+    private fun getUser() {
+        if (Networks(_activity!!).verificarNerworks()) {
+            data = gson.fromJson<User>(_memoryData!!.getData("user"), typeItem)
+            nombreUsuario = data?.name.toString()
+            apellidos = data?.lastName.toString()
+            emailUsuario = data?.email.toString()
+        } else {
+            Log.i("ManraTest", "Error")
+        }
+    }
+    //funcion para obtener datos de usuario Autenticado
+
+    //funciones progressBar
+    private fun invisibleProgressBar() {
+        _progressBarRequestVisit = progressBar_request_visit!!
+        _progressBarRequestVisit!!.visibility = ProgressBar.INVISIBLE
+    }
+
+    private fun visibleProgressBar() {
+        _progressBarRequestVisit = progressBar_request_visit!!
+        _progressBarRequestVisit!!.visibility = ProgressBar.VISIBLE
+    }
+    //funciones progressBar
+
+
+
+}
+  //funcion para enviar datos a Firebase
+    private fun setToFireBase(empresa: String) {
+        visibleProgressBar()
+        val city = hashMapOf(
+            "name" to empresa,
+        )
+        _db!!.collection("solicitudVisita").document(emailUsuario!!)
+            .set(city)
+            .addOnSuccessListener {
+                Log.d(
+                    ContentValues.TAG,
+                    "DocumentSnapshot successfully written!"
+                )
+            }
+            .addOnFailureListener { e -> Log.w(ContentValues.TAG, "Error writing document", e) }
+    }
+
+    // funciones para fecha, data/time picker
+    private fun showTimePickerDialog() {
+        val timePicker = TimePickerFragment { onTimeSeletion(it) }
+        timePicker.show(parentFragmentManager, "time picker dialog fragment")
+    }
+
+    private fun onTimeSeletion(time: String) {
+        hora_tentativa.setText(time)
+
+    }
+
+    private fun showDatePickerDialog() {
+        val datePicker = DatePickerFragment { day, month, year -> onDateSeletion(day, month, year) }
+        datePicker.show(parentFragmentManager, "date picker dialog fragment")
+    }
+
+    fun onDateSeletion(day: Int, mont: Int, year: Int) {
+
+        when (mont + 1) {
+            1 -> montString = "Enero"
+            2 -> montString = "Febrero"
+            3 -> montString = "Marzo"
+            4 -> montString = "Abril"
+            5 -> montString = "Mayo"
+            6 -> montString = "Junio"
+            7 -> montString = "Julio"
+            8 -> montString = "Agosto"
+            9 -> montString = "Septiembre"
+            10 -> montString = "Octubre"
+            11 -> montString = "Noviembre"
+            12 -> montString = "Diciembre"
+        }
+        fecha_tentativa.setText("$day/$montString/$year")
+    }
+    // funciones para fecha, data/time picker
+
+    //funcion para obtener datos de usuario Autenticado
+    @RequiresApi(Build.VERSION_CODES.M)
+    private fun getUser() {
+        if (Networks(_activity!!).verificarNerworks()) {
+            data = gson.fromJson<User>(_memoryData!!.getData("user"), typeItem)
+            nombreUsuario = data?.name.toString()
+            apellidos = data?.lastName.toString()
+            emailUsuario = data?.email.toString()
+        } else {
+            Log.i("ManraTest", "Error")
+        }
+    }
+    //funcion para obtener datos de usuario Autenticado
+
+    //funciones progressBar
+    private fun invisibleProgressBar() {
+        _progressBarRequestVisit = progressBar_request_visit!!
+        _progressBarRequestVisit!!.visibility = ProgressBar.INVISIBLE
+    }
+
+    private fun visibleProgressBar() {
+        _progressBarRequestVisit = progressBar_request_visit!!
+        _progressBarRequestVisit!!.visibility = ProgressBar.VISIBLE
+    }
+    //funciones progressBar
+
+    //funciones para iniciar variables
+//    private fun iniciarVariablesDatosDocente() {
+//        fechaElavoracion = current_data.text.toString()
+//        periodoEscolar = periodo_escolar.text.toString()
+//        materia = materiaVisita.text.toString()
+//        nombreDocente = nombre_docente.text.toString()
+//        telefonoDocente = telefono_docente.text.toString()
+//    }
+//
+//    private fun iniciarVariablesDatosEmpresa() {
+//        nombreEmpresa = nombre_docente.text.toString()
+//        domicilioEmpresa = domicilio_empresa.text.toString()
+//        ciudadEmpresa = ciudad_empresa.text.toString()
+//        telefonoEmpresa = telefono_empresa.toString()
+//        emailEmpresa = email_empresa.toString()
+//    }
+//
+//    private fun iniciarVariablesDatosVisita() {
+//        carrera = carrera_visita.toString()
+//        areaObservar = area_observar.toString()
+//        objetivoVisita = objetivo_visita.toString()
+//        numeroAlumnos = numero_alumnos.toString()
+//        fechaTentativa = fecha_tentativa.toString()
+//        horaTentativa = hora_tentativa.toString()
+//    }
+//    //funciones para iniciar variables
+
+    //funciones validar variables
+//    private fun validarDatosDocente(){
+//        if ("" == periodoEscolar) {
+//            periodo_escolar.error = getString(R.string.error_field_required)
+//            periodo_escolar.requestFocus()
+//        }
+//        if ("" == materia) {
+//            materiaVisita.error = getString(R.string.error_field_required)
+//            periodo_escolar.requestFocus()
+//        }
+//        if ("" == telefonoDocente) {
+//            telefono_docente.error = getString(R.string.error_field_required)
+//            periodo_escolar.requestFocus()
+//        }
+//    }
+
+//    private fun validarDatosEmpresa() {
+//        if ("" == nombreEmpresa) {
+//            nombre_empresa.error = getString(R.string.error_field_required)
+//            nombre_empresa.requestFocus()
+//        }
+//        if ("" == domicilioEmpresa) {
+//            domicilio_empresa.error = getString(R.string.error_field_required)
+//        }
+//        if ("" == ciudadEmpresa) {
+//            ciudad_empresa.error = getString(R.string.error_field_required)
+//            ciudad_empresa.requestFocus()
+//        }
+//        if ("" == telefonoEmpresa) {
+//            telefono_empresa.error = getString(R.string.error_field_required)
+//            telefono_empresa.requestFocus()
+//        }
+//        if ("" == emailEmpresa) {
+//            email_empresa.error = getString(R.string.error_field_required)
+//            email_empresa.requestFocus()
+//        }
+//    }
+
+//    private fun validarDatosVisita() {
+//        if ("" == carrera) {
+//            carrera_visita.error = getString(R.string.error_field_required)
+//            carrera_visita.requestFocus()
+//        }
+//        if ("" == areaObservar) {
+//            area_observar.error = getString(R.string.error_field_required)
+//            area_observar.requestFocus()
+//        }
+//        if ("" == objetivoVisita) {
+//            objetivo_visita.error = getString(R.string.error_field_required)
+//            objetivo_visita.requestFocus()
+//        }
+//        if ("" == numeroAlumnos) {
+//            numero_alumnos.error = getString(R.string.error_field_required)
+//            numero_alumnos.requestFocus()
+//        }
+//        if ("" == fechaTentativa) {
+//            fecha_tentativa.error = getString(R.string.error_field_required)
+//            fecha_tentativa.requestFocus()
+//        }
+//        if ("" == horaTentativa) {
+//            hora_tentativa.error = getString(R.string.error_field_required)
+//            hora_tentativa.requestFocus()
+//        }
+//    }
+    //funciones validar variables
